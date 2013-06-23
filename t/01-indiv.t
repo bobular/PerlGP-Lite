@@ -5,25 +5,30 @@ use strict;
 use warnings; # FATAL => 'all';
 use Test::More;
 use aliased 'PerlGP::Lite::Individual';
+use PerlGP::Lite::GPMisc qw/copies/;
 
 plan tests => 5;
 
+sub copies {
+}
 
 my $filestem = 'tmp-indiv';
+my $functions = {
+		 ROOT => [ 'something({FOO}, {BAR})' ],
+		 BAR => [ '{BAR}{BARX}', '{BARX}' ],
+		};
+my $terminals = {
+		 ROOT => [ 'nothing()' ],
+		 FOO => [ 'foo1', 'foo2' ],
+		 BAR => [ 'bar' ],
+		 BARX => [ 'eee', 'ooo', copies(2, 'aaa') ],
+		};
 
 my $individual = Individual->new
   (
    filestem => $filestem,
-   grammar_branching => {
-			 ROOT => [ 'something({FOO}, {BAR})' ],
-			 BAR => [ '{BAR}{BARX}', '{BARX}' ],
-			},
-   grammar_nonbranching => {
-			    ROOT => [ 'nothing()' ],
-			    FOO => [ 'foo1', 'foo2' ],
-			    BAR => [ 'bar' ],
-			    BARX => [ 'eee' ],
-			   },
+   grammar_branching => $functions,
+   grammar_nonbranching => $terminals,
   );
 
 

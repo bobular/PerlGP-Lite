@@ -1,5 +1,8 @@
-package GPMisc;
-#GPL#
+#             -*- mode: CPerl -*-
+package PerlGP::Lite::GPMisc;
+
+use Exporter 'import';
+@EXPORT_OK = qw/copies pickrandom poisson/;
 
 sub pickrandom {
     my $ref = shift;
@@ -84,4 +87,15 @@ sub unique
   @got;
 }
 
-return 1;
+# this helper routine will give you multiple copies of
+# something, i.e qw(1 1 1 2 3) is equivalent to (copies(3, 1), 2, 3)
+sub copies {
+  my ($num, @things) = @_;
+  my @result;
+  while ($num-->0) {
+    push @result, @things;
+  }
+  return @result;
+}
+
+1;

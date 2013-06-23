@@ -6,7 +6,7 @@ use strict;
 use warnings; # FATAL => 'all';
 use Mouse;
 use SDBM_File;
-use aliased 'PerlGP::Lite::GPMisc';
+use PerlGP::Lite::GPMisc qw/pickrandom poisson/;
 use Fcntl;
 use Digest::MD5 qw(md5_hex);
 use Carp;
@@ -514,7 +514,7 @@ sub _random_terminal {
     unless (defined $self->{Terminals}{$type});
 
   return $self->_random_existing_terminal($type) ||
-    GPMisc::pickrandom($self->{Terminals}{$type});
+    pickrandom($self->{Terminals}{$type});
 }
 
 sub _random_existing_terminal {
@@ -534,7 +534,7 @@ sub _random_existing_terminal {
                                                  # or nodes can saturate
 	  } keys %{$self->{genome}};
     if (@termnodes) {
-      my $terminalcopy = GPMisc::pickrandom(\@termnodes);
+      my $terminalcopy = pickrandom(\@termnodes);
       $terminalcopy = $self->{genome}{$terminalcopy};
       return $terminalcopy;
     }
@@ -550,9 +550,9 @@ sub _random_function {
   } elsif ($self->{UseEncapsTerminalsFrac} &&
 	   rand(1) < $self->{UseEncapsTerminalsFrac}) {
     return $self->_random_existing_terminal($type, 'encaps_only') ||
-      GPMisc::pickrandom($self->{Functions}{$type});
+      pickrandom($self->{Functions}{$type});
   } else {
-    return GPMisc::pickrandom($self->{Functions}{$type});
+    return pickrandom($self->{Functions}{$type});
   }
 }
 
@@ -675,7 +675,7 @@ sub crossover {
     # select one of my nodes
     my $mynode;
     do {
-      $mynode = GPMisc::pickrandom(\@mynodes);
+      $mynode = pickrandom(\@mynodes);
       $self->_tree_error($mynode, 'crossover')
 	if (!defined $mysizes{$mynode});
     } until (rand($mymaxsize*$self->{XoverDepthBias}) <= $mysizes{$mynode});
@@ -692,7 +692,7 @@ sub crossover {
     } else {
       # otherwise pick a random node as usual
       do {
-	$matenode = GPMisc::pickrandom(\@matenodes);
+	$matenode = pickrandom(\@matenodes);
 	$mate->_tree_error($matenode, 'crossover2 nodes were '.join(':',@matenodes))
 	  if (!defined $matesizes{$matenode});
       } until (rand($matemaxsize*$self->{XoverDepthBias}) <= $matesizes{$matenode});
@@ -899,7 +899,7 @@ sub _random_node {
   my $z = 0;
   # the depth_bias bit helps to give an even balance of subtree sizes
   do {
-    $randnode = GPMisc::pickrandom(\@mynodes);
+    $randnode = pickrandom(\@mynodes);
     ($rtype) = $randnode =~ /node([A-Z]+)\d+/;
     $self->_tree_error($randnode, 'mutate') if (!defined $mysizes{$randnode});
   } until (rand($mymaxsize*$depth_bias) <= $mysizes{$randnode} &&
@@ -1046,7 +1046,7 @@ sub point_mutate {
 
 sub macro_mutate {
   my $self = shift;
-  my $macro_type = GPMisc::pickrandom($self->{MacroMutationTypes});
+  my $macro_type = pickrandom($self->{MacroMutationTypes});
   $self->$macro_type();
 }
 
@@ -1060,7 +1060,7 @@ sub replace_subtree {
 
   # replace subtree with random subtree tree
   $self->_del_subtree($mutnode);
-  my $newdepth = GPMisc::poisson($self->{NewSubtreeDepthMean},
+  my $newdepth = poisson($self->{NewSubtreeDepthMean},
 				 $self->{NewSubtreeDepthMax});
   $genome->{$mutnode} = '';
   $genome->{$mutnode} =
@@ -1103,7 +1103,7 @@ sub insert_internal {
 	$genome->{$mutnode} =~ s/{$ntype}/{$newnode}/;
       } else {
 	# add new subtree of depth 0,1 or 2
-	my $newdepth = GPMisc::poisson($self->{NewSubtreeDepthMean}, $self->{NewSubtreeDepthMax});
+	my $newdepth = poisson($self->{NewSubtreeDepthMean}, $self->{NewSubtreeDepthMax});
 	$nodeid = $self->nid();
 	$nodeid = $self->nid() while (defined $genome->{"node$subtype$nodeid"});
 	my $subnode = "node$subtype$nodeid";
