@@ -9,9 +9,6 @@ use PerlGP::Lite::GPMisc qw/copies/;
 
 plan tests => 5;
 
-sub copies {
-}
-
 my $filestem = 'tmp-indiv';
 my $functions = {
 		 ROOT => [ 'something({FOO}, {BAR})' ],
