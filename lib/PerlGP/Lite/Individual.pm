@@ -86,6 +86,48 @@ has 'Terminals' => (
     required => 1,
     );
 
+=cut
+
+=head2 crossover_probability
+
+NodeXoverProb
+
+=cut
+
+has 'NodeXoverProb' =>
+  ( init_arg => 'crossover_probability',
+    is => 'rw',
+    isa => 'Num',
+    default => 0.01,
+  );
+
+=head2 mutation_probability
+
+NodeMutationProb
+
+=cut
+
+has 'NodeMutationProb' =>
+  ( init_arg => 'mutation_probability',
+    is => 'rw',
+    isa => 'Num',
+    default => 0.01,
+  );
+
+=head2 minimum_genome_size
+
+MinTreeNodes
+
+=cut
+
+has 'MinTreeNodes' =>
+  ( init_arg => 'minimum_genome_size',
+    is => 'rw',
+    isa => 'Int',
+    default => 0,
+  );
+
+
 sub BUILD {
   my $self = shift;
   $self->_init();
@@ -113,14 +155,14 @@ sub _init {
 
  ###### MUTATION ######
  # Probabilty that each node is mutated
-		  NodeMutationProb => 1/100,
+		  ### NodeMutationProb => 1/100,
  # Or you can override this with a fixed number of mutations (beware bloat!)
  # and probability of this happening
                   FixedMutations => 0,
                   FixedMutationProb => 0,
 
  # Fraction of point mutations (the rest are macro mutations)
-		  PointMutationFrac => 0.7,
+		  PointMutationFrac => 0.8,
 
  # Fraction of point mutations which involve constants that are randomly
  # adjusted rather than discretely
@@ -171,7 +213,7 @@ sub _init {
 
  ###### CROSSOVER ######
  # Per-node crossover-point selection probability
-		  NodeXoverProb => 1/50,
+		  ### NodeXoverProb => 1/50,
  # Or you can override this with a fixed number of crossovers (beware bloat!)
  # and probability of this happening
 		  FixedXovers => 0,
@@ -185,7 +227,7 @@ sub _init {
 		  XoverHomologyBias => 1,
  # Quick Homologous Crossover (new in version 1.1)
  # 0 = off, 1 = always on
-                  QuickXoverProb => 0,
+                  QuickXoverProb => 0.9,
 
 
  # Depth bias for crossover point selection (see MacroMutationDepthBias)
@@ -202,11 +244,11 @@ sub _init {
  ###### Tree/subtree size/shape parameters
  # Maximum number of nodes allowed in tree as a whole
  # (random terminal nodes are used after this limit is reached)
-		  MaxTreeNodes => 1000,
+		  MaxTreeNodes => 10000,
  # Minimum number of nodes for FRESHLY generated trees (_init_tree())
  # If the tree is too small, it will try again, until the tree is big enough.
  # So this could TAKE TIME...
-                  MinTreeNodes => 0,
+                  ### MinTreeNodes => 0,
 
  ### The following five tree depth options must be changed if
  ### non-naturally terminating grammars are used
