@@ -31,9 +31,9 @@ my $individual = Individual->new
 
 isa_ok($individual, 'PerlGP::Lite::Individual');
 is($individual->{MacroMutationDepthBias}, 0.7, "PerlGP default attribs raw access");
-is($individual->PointMutationFrac, 0.7, "PerlGP default attribs accessors");
-$individual->PointMutationFrac(0.8);
-is($individual->PointMutationFrac, 0.8, "PerlGP default attribs setter");
+is($individual->PointMutationFrac, 0.8, "PerlGP default attribs accessors");
+$individual->PointMutationFrac(0.9);
+is($individual->PointMutationFrac, 0.9, "PerlGP default attribs setter");
 my $code = $individual->getCode();
 diag($code);
 like($code, qr/thing/, "some code was generated");

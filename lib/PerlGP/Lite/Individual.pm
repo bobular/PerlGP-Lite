@@ -127,6 +127,19 @@ has 'MinTreeNodes' =>
     default => 0,
   );
 
+=head2 numeric_mutation_types
+
+NumericAllowNTypes
+
+=cut
+
+has 'NumericAllowNTypes' =>
+  (
+    init_arg => 'numeric_mutation_types',
+    is => 'rw',
+    isa => 'HashRef',
+    default => sub { return {} },
+  );
 
 sub BUILD {
   my $self = shift;
@@ -330,8 +343,8 @@ sub _init {
 sub reInitialise {
   my $self = shift;
 
-  $self->evalEvolvedSubs();
-  $self->evolvedInit();
+#  $self->evalEvolvedSubs();
+#  $self->evolvedInit();
 }
 
 # you MUST override this method in your evolved code (in Grammar.pm)
@@ -401,7 +414,7 @@ sub untieGenome {
 sub _tree_error {
   my ($self, $node, $msg) = @_;
   warn "node $node in genome not found in tree during $msg\n";
-  $self->_display_tree('root');
+  # $self->_display_tree('root');
   $self->_init_tree();
   die "died after initialising genome\n";
 }
@@ -416,6 +429,7 @@ sub initTree {
 # assume genome is tied
 sub _init_tree {
   my $self = shift;
+#warn "DEBUG: initialising tree of ".$self->DBFileStem."\n";
   my $genome = $self->{genome};
   do {
     %{$genome} = ( 'tied'=>1, root=>'{nodeROOT0}', nodeROOT0=>'');
