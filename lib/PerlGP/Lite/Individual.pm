@@ -101,6 +101,23 @@ has 'NodeXoverProb' =>
     default => 0.01,
   );
 
+=head2 crossover_depth
+
+XoverDepthBias
+
+greater than 1: more rooty
+less than 1: more leafy
+(must always be positive)
+
+=cut
+
+has 'XoverDepthBias' =>
+  ( init_arg => 'crossover_depth',
+    is => 'rw',
+    isa => 'Num',
+    default => 3,
+  );
+
 =head2 mutation_probability
 
 NodeMutationProb
@@ -112,6 +129,23 @@ has 'NodeMutationProb' =>
     is => 'rw',
     isa => 'Num',
     default => 0.01,
+  );
+
+=head2 mutation_depth
+
+MacroMutationDepthBias
+
+>1 root bias
+<1 leaf bias
+(must always be positive)
+
+=cut
+
+has 'MacroMutationDepthBias' =>
+  ( init_arg => 'macro_mutation_depth',
+    is => 'rw',
+    isa => 'Num',
+    default => 2,
   );
 
 =head2 minimum_genome_size
@@ -197,12 +231,13 @@ sub _init {
  # When set, require that all mutations make some visible difference to code
 		  NoNeutralMutations => 0,
 
- ### Depth bias: zero means no bias, just pick a random node
+ ### Depth bias: 1 means no bias, just pick a random node
  ### higher numbers mean that the nodes closer to the root are favoured
+ ### smaller positive nonzero numbers mean nodes closer to the leaves
  # Depth bias for point mutations
-		  PointMutationDepthBias => 0,
+		  PointMutationDepthBias => 0.5,
  # Depth bias for macro mutations
-		  MacroMutationDepthBias => 0.7,
+ #		  MacroMutationDepthBias => 2,
 
  # What types of macro mutation are used
  # (you can bias certain types by specifying them more than once)
@@ -244,7 +279,7 @@ sub _init {
 
 
  # Depth bias for crossover point selection (see MacroMutationDepthBias)
-		  XoverDepthBias => 0.1,
+ #		  XoverDepthBias => 3,
 
  # Only do asexual reproduction (simple copy of genomes)
 		  AsexualOnly => 0,
@@ -683,32 +718,21 @@ sub crossover {
   } else {
     $numtodo = $self->FixedXovers()
       if (rand() < $self->FixedXoverProb());
-
-    my $dummy;
-    my $imax = keys %$mygenome;
-    for (my $i=0; $i<$imax; $i++) {
-      $dummy++ if (rand() < $self->{NodeXoverProb});
-    }
   }
 
   # recursively determine all subtree sizes and node types for self and mate
   my @mynodes = grep !/ROOT/, grep /^node/, keys %$mygenome;
   my %mysizes; my %mytypes;
   $self->_tree_type_size('root', \%mysizes, \%mytypes);
-  my @temp = sort {$b <=> $a} values %mysizes;
-  my $mymaxsize = shift @temp;
+  # sort nodes rootiest first
+  @mynodes = sort { $mysizes{$b} <=> $mysizes{$a} } @mynodes;
 
   my @matenodes = grep !/ROOT/, grep /^node/, keys %$mategenome;
   my %matesizes; my %matetypes;
   $mate->_tree_type_size('root', \%matesizes, \%matetypes);
-  @temp = sort {$b <=> $a} values %matesizes;
-  my $matemaxsize = shift @temp;
+  @matenodes = sort { $matesizes{$b} <=> $matesizes{$a} } @matenodes;
 
-  # now we randomly look through all pairwise combinations of
-  # self and mate nodes until the subtree sizes and types match close enough
-
-  my (%myseen, %mateseen);
-  my ($samples, $maxsamples, $xovercount) = (0, @mynodes*100, 0);
+  my ($samples, $maxsamples, $xovercount) = (0, $numtodo*10, 0);
 
   my (%myxsubnodes, %matexsubnodes); # these are the children of xover nodes
   my (%myxpair, %matexpair); # these are the xover nodes themselves (value=partners)
@@ -725,17 +749,10 @@ sub crossover {
     $asexual = 1;
   }
 
-  while (keys %myseen < @mynodes &&
-	 keys %mateseen < @matenodes &&
-	 $xovercount < $numtodo) {
-    # select one of my nodes
-    my $mynode;
-    do {
-      $mynode = pickrandom(\@mynodes);
-      $self->_tree_error($mynode, 'crossover')
-	if (!defined $mysizes{$mynode});
-    } until (rand($mymaxsize*$self->{XoverDepthBias}) <= $mysizes{$mynode});
-    $myseen{$mynode} = 1;
+  while ($xovercount < $numtodo) {
+    # select one of my nodes - with optional bias towards root (XoverDepthBias > 1) or leaves (XoverDepthBias < 1)
+    my $mynode = $mynodes[int(@mynodes * rand(1)**$self->{XoverDepthBias})];
+
 
     # select one of the mate's nodes
     my $matenode;
@@ -746,29 +763,29 @@ sub crossover {
 	$self->{QuickXoverProb} && rand() < $self->{QuickXoverProb}) {
       $matenode = $mynode;
     } else {
-      # otherwise pick a random node as usual
-      do {
-	$matenode = pickrandom(\@matenodes);
-	$mate->_tree_error($matenode, 'crossover2 nodes were '.join(':',@matenodes))
-	  if (!defined $matesizes{$matenode});
-      } until (rand($matemaxsize*$self->{XoverDepthBias}) <= $matesizes{$matenode});
+      # otherwise pick a random node of the same type
+      # first restrict to same type
+      my $mytype = $mytypes{$mynode};
+      my @sametypematenodes = grep { $matetypes{$_} eq $mytype } @matenodes;
+      # now pick one
+      $matenode = $sametypematenodes[int(@sametypematenodes * rand(1)**$mate->{XoverDepthBias})];
 
       # do reverse quick homol check too
-      if (exists $mysizes{$matenode} &&
-	  $self->{QuickXoverProb} && rand() < $self->{QuickXoverProb}) {
+      if ($matenode && exists $mysizes{$matenode} &&
+	  $mate->{QuickXoverProb} && rand() < $mate->{QuickXoverProb}) {
 	$mynode = $matenode;
-	$myseen{$mynode} = 1;
       }
     }
-    $mateseen{$matenode} = 1;
 
     if ($samples++>$maxsamples) {
-      warn "xover too many tries ($xovercount out of $numtodo)\n";
+      warn "xover too many tries ($xovercount xover pairs found out of $numtodo)\n";
       last;
     }
-    # nodes have the same type structure and are not in subtrees of previously
+
+    # nodes have the same type structure (should already be) and are not in subtrees of previously
     # picked xover nodes - or have been used before
-    if ($mytypes{$mynode} eq $matetypes{$matenode} &&
+    if (defined $matenode &&
+	$mytypes{$mynode} eq $matetypes{$matenode} &&
 	!exists $myxsubnodes{$mynode} && !exists $matexsubnodes{$matenode} &&
 	!exists $myxpair{$mynode} && !exists $matexpair{$matenode}) {
 
@@ -803,10 +820,13 @@ sub crossover {
 	  $matexpair{$matenode} = $mynode;
 	  $pcid{$mynode} = $pcid;
           $xovercount++;
+	  # warn $mynode eq $matenode ? "quick pair\n" : "random crossover pair: $mynode ($mysizes{$mynode}) $matenode ($matesizes{$matenode})\n";
 	}
       }
     }
   }
+
+  # warn "going to do $xovercount of planned $numtodo crossovers\n";
   # now we actually do the cross over(s)
   if ($xovercount > 0) {
 
@@ -936,36 +956,32 @@ sub _fix_nodes {
 sub _random_node {
   my ($self, %p) = @_;
 
-  my $depth_bias = $p{depth_bias} || 0;
+  my $depth_bias = $p{depth_bias} || 1;
 
   my %mysizes;
+  my %mytypes;
   my $start_node = $p{start_node} || 'root';
-  $self->_tree_type_size($start_node, \%mysizes);
+  $self->_tree_type_size($start_node, \%mysizes, \%mytypes);
   my @mynodes = grep /^node(?!ROOT)/, keys %mysizes;
-  my @temp = sort {$b <=> $a} values %mysizes;
-  my $mymaxsize = shift @temp;
 
-  my %subnodes;
-  if ($p{not_this_subtree}) {
+  if (defined $p{node_type}) {
+    @mynodes = grep { $mytypes{$_} eq $p{node_type} } @mynodes;
+  }
+  if (defined $p{not_this_node}) {
+    @mynodes = grep { $_ ne $p{not_this_node} } @mynodes;
+  }
+  if (defined $p{not_this_subtree}) {
+    my %subnodes;
     grep { $subnodes{$_} = 1 } $self->_get_subnodes($p{not_this_subtree});
     $subnodes{$p{not_this_subtree}} = 1;
+    @mynodes = grep { !exists $subnodes{$_} } @mynodes;
   }
 
-  my ($randnode, $rtype);
-  my $z = 0;
-  # the depth_bias bit helps to give an even balance of subtree sizes
-  do {
-    $randnode = pickrandom(\@mynodes);
-    ($rtype) = $randnode =~ /node([A-Z]+)\d+/;
-    $self->_tree_error($randnode, 'mutate') if (!defined $mysizes{$randnode});
-  } until (rand($mymaxsize*$depth_bias) <= $mysizes{$randnode} &&
-	   (!defined $p{node_type} || $rtype eq $p{node_type}) &&
-	   (!defined $p{not_this_node} || $randnode ne $p{not_this_node}) &&
-	   (!defined $p{not_this_subtree} || !exists $subnodes{$randnode})
-	   || ($z++ > $too_many_tries)
-	  );
+  # sort rootiest first
+  @mynodes = sort { $mysizes{$b} <=> $mysizes{$a} } @mynodes;
 
-  return $z < $too_many_tries ? $randnode : '';
+  # return one biased to beginning (bias>1) or end (bias<1) of list
+  return $mynodes[int(@mynodes * rand(1)**$depth_bias)];
 }
 
 

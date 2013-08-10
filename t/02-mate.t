@@ -26,9 +26,11 @@ my $terminals = {
 my %params = (
 	      grammar_branching => $functions,
 	      grammar_nonbranching => $terminals,
-	      crossover_probability => 0.5,
+	      crossover_probability => 0.2,
 	      mutation_probability => 0.5,
 	      minimum_genome_size => 20,
+	      crossover_depth => 1,
+	      macro_mutation_depth => 1,
 	     );
 
 my $parent1 = Individual->new(filestem => $filestem.'.p1', %params);
