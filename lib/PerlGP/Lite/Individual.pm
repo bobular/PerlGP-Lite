@@ -826,6 +826,19 @@ sub crossover {
     }
   }
 
+  # copy and paste alert (from a few blocks above)
+  if ($xovercount == 0) {
+    warn "no crossover points (of $numtodo) found - doing asexual\n";
+    my ($myxover) = grep /ROOT/, grep /^node/, keys %$mygenome;
+    my ($matexover) = grep /ROOT/, grep /^node/, keys %$mategenome;
+    die "problem with asexual 'crossover' - no ROOT nodes"
+      unless ($myxover && $matexover);
+    $myxpair{$myxover} = $matexover;
+    $matexpair{$matexover} = $myxover;
+    $asexual = 1;
+    $xovercount++;
+  }
+
   # warn "going to do $xovercount of planned $numtodo crossovers\n";
   # now we actually do the cross over(s)
   if ($xovercount > 0) {
