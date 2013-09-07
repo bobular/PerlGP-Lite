@@ -6,6 +6,7 @@ use strict;
 use warnings; # FATAL => 'all';
 use Mouse;
 use SDBM_File;
+use DB_File;
 use PerlGP::Lite::GPMisc qw/pickrandom poisson/;
 use Fcntl;
 use Digest::MD5 qw(md5_hex);
@@ -186,9 +187,12 @@ __PACKAGE__->meta->make_immutable();
 #############
 
 
-my $DBTYPE = 'SDBM_File';
+# my $DBTYPE = 'SDBM_File';
+my $DBTYPE = 'DB_File';
 my $too_many_tries = 5000;
 
+my $regexp_nodeAZd = qr/{node[A-Z]+\d+}/;
+my $regexp_nodeAZdnp = qr/node([A-Z]+)\d+/;
 
 sub _init {
   my ($self) = @_;
@@ -474,6 +478,7 @@ sub _init_tree {
 			TreeDepthMax=>$self->{TreeDepthMax},
 			type=>'ROOT');
   } until (keys(%$genome)-2 >= $self->MinTreeNodes());
+  $self->{sizeCalcRequired} = 1;
   # can't use $self->getSize because it does a tie() which can
   # create an endless recursive loop
 }
@@ -670,6 +675,7 @@ sub _grow_tree {
       $self->_grow_tree(depth=>$p{depth}+1,
 			TreeDepthMax=>$p{TreeDepthMax}, type=>$ntype);
   }
+  $self->{sizeCalcRequired} = 1;
   return $node;
 }
 
@@ -868,6 +874,8 @@ sub crossover {
     $mate->_start_crossover($self, $recip2, \%matexpair);
   }
   $self->untieGenome(); $mate->untieGenome();
+  $recip1->{sizeCalcRequired} = 1;
+  $recip2->{sizeCalcRequired} = 1;
 }
 
 sub _start_crossover {
@@ -882,12 +890,79 @@ sub _start_crossover {
   $recipient->untieGenome();
 }
 
+sub _has_children {
+  my ($self, $node) = @_;
 
-# in _tree_id assume genomes are tied for speed
-sub _tree_id {
+  $self->{sizeCalcRequired} = 1 if (! exists $self->{sizeCalcRequired});
+  $self->{nodesLookup} = {} if (! exists $self->{nodesLookup});
+
+  my $children;
+  if (($self->{sizeCalcRequired} == 1) || ! (exists $self->{nodesLookup}{$node})) {
+    $children = $self->{genome}{$node} =~ $regexp_nodeAZd;
+  }
+  else {
+    $children = @{$self->{nodesLookup}{$node}{subnodes}};
+  }
+  return $children;
+}
+
+sub _children {
+  my ($self, $node) = @_;
+
+  $self->{sizeCalcRequired} = 1 if (! exists $self->{sizeCalcRequired});
+  $self->{nodesLookup} = {} if (! exists $self->{nodesLookup});
+
+  my $children;
+  if (($self->{sizeCalcRequired} == 1) || ! (exists $self->{nodesLookup}{$node})) {
+    $children = $self->{genome}{$node} =~ $regexp_nodeAZd;
+  }
+  else {
+    $children = $self->{nodesLookup}{$node}{subnodes};
+  }
+  return $children;
+}
+
+sub _tree_id_lookup_no_rec {
+  my ($self, $mate, $mystartnode, $matestartnode) = @_;
+  my @nodestack = [];
+  my $sum = 0;
+  my $mynode;
+  my $matenode;
+  push @nodestack, $mystartnode;
+  push @nodestack, $matestartnode;
+  while ($matenode = pop(@nodestack)) {
+    print "Mate:".$matenode.":";
+    $mynode = pop(@nodestack);
+    print ", My:".$mynode."\n";
+    if (@{$self->{nodesLookup}{$mynode}{subnodes}}) {
+      if ($mate->_children($matenode)) {
+        my $mycopy = $self->{genome}{$mynode};
+        my $matecopy = $mate->{genome}{$matenode};
+        $mycopy =~ s/{node([A-Z]+)\d+}/{$1}/g;
+        $matecopy =~ s/{node([A-Z]+)\d+}/{$1}/g;
+        if ($mycopy eq $matecopy) {
+	  $sum += 1;
+          my @mysubnodes = $self->_children($mynode);
+          my @matesubnodes = $mate->_children($matenode);
+          my $i;
+          for ($i=0; $i<@mysubnodes; $i++) {
+            push @nodestack, $mysubnodes[$i];
+            push @nodestack, $matesubnodes[$i];
+          }
+        }
+      } 
+    }
+    else { # they could both be terminal nodes
+      $sum += 1 if ($self->{genome}{$mynode} eq $mate->{genome}{$matenode});
+    }
+  }
+  return $sum;
+}
+
+sub _tree_id_lookup {
   my ($self, $mate, $mynode, $matenode) = @_;
-  if ($self->{genome}{$mynode} =~ /{node[A-Z]+\d+}/) {
-    if ($mate->{genome}{$matenode} =~ /{node[A-Z]+\d+}/) {
+  if (@{$self->{nodesLookup}{$mynode}{subnodes}}) {
+    if ($mate->_has_children($matenode)) {
       my $mycopy = $self->{genome}{$mynode};
       my $matecopy = $mate->{genome}{$matenode};
       $mycopy =~ s/{node([A-Z]+)\d+}/{$1}/g;
@@ -898,7 +973,7 @@ sub _tree_id {
 	my @matesubnodes = $mate->{genome}{$matenode} =~ /{(node[A-Z]+\d+)}/g;
 	my $i;
 	for (my $i=0; $i<@mysubnodes; $i++) {
-	  $sum += $self->_tree_id($mate, $mysubnodes[$i], $matesubnodes[$i]);
+	  $sum += $self->_tree_id_lookup($mate, $mysubnodes[$i], $matesubnodes[$i]);
 	}
 	return $sum;
       }
@@ -914,6 +989,55 @@ sub _tree_id {
     return 1 if ($self->{genome}{$mynode} eq $mate->{genome}{$matenode});
   }
   return 0;
+}
+
+# assume tied
+sub _tree_id_search {
+  my ($self, $mate, $mynode, $matenode) = @_;
+  if ($self->{genome}{$mynode} =~ $regexp_nodeAZd) {
+    if ($mate->_has_children($matenode)) {
+      my $mycopy = $self->{genome}{$mynode};
+      my $matecopy = $mate->{genome}{$matenode};
+      $mycopy =~ s/{node([A-Z]+)\d+}/{$1}/g;
+      $matecopy =~ s/{node([A-Z]+)\d+}/{$1}/g;
+      if ($mycopy eq $matecopy) {
+	my $sum = 1;
+	my @mysubnodes = $self->{genome}{$mynode} =~ /{(node[A-Z]+\d+)}/g;
+	my @matesubnodes = $mate->{genome}{$matenode} =~ /{(node[A-Z]+\d+)}/g;
+	my $i;
+	for (my $i=0; $i<@mysubnodes; $i++) {
+	  $sum += $self->_tree_id_search($mate, $mysubnodes[$i], $matesubnodes[$i]);
+	}
+	return $sum;
+      }
+      else {
+	return 0;
+      }
+    }
+    else {
+      return 0;
+    }
+  }
+  else { # they could both be terminal nodes
+    return 1 if ($self->{genome}{$mynode} eq $mate->{genome}{$matenode});
+  }
+  return 0;
+}
+
+# in _tree_id assume genomes are tied for speed
+sub _tree_id {
+  my ($self, $mate, $mynode, $matenode) = @_;
+
+  $self->{sizeCalcRequired} = 1 if (! exists $self->{sizeCalcRequired});
+  $self->{nodesLookup} = {} if (! exists $self->{nodesLookup});
+
+  my $sum;
+  if (($self->{sizeCalcRequired} == 1) || ! (exists $self->{nodesLookup}{$mynode})) {
+    $sum = $self->_tree_id_search($mate, $mynode, $matenode);
+  }
+  else {
+    $sum = $self->_tree_id_lookup($mate, $mynode, $matenode);
+  }
 }
 
 # assume genomes are tied for speed
@@ -943,6 +1067,7 @@ sub _crossover {
     }
     $self->_crossover($mate, $recip, $mynext, $matenext, $myxpoint);
   }
+  $recip->{sizeCalcRequired} = 1;
 }
 
 # assume genome is tied
@@ -963,7 +1088,7 @@ sub _fix_nodes {
     }
     $self->_fix_nodes($subnode);
   }
-
+  $self->{sizeCalcRequired} = 1;
 }
 
 sub _random_node {
@@ -1088,10 +1213,10 @@ sub point_mutate {
     $self->_random_node(depth_bias=>$depth_bias);
   return unless ($mutnode);
 
-  my ($ntype) = $mutnode =~ /node([A-Z]+)\d+/;
+  my ($ntype) = $mutnode =~ $regexp_nodeAZdnp;
 
   # if it's an internal node
-  if ($genome->{$mutnode} =~ /{node[A-Z]+\d+}/) {
+  if ($genome->{$mutnode} =~ $regexp_nodeAZd) {
     my @subnodes = $genome->{$mutnode} =~ /{(node[A-Z]+\d+)}/g;
     my @subtypes = $genome->{$mutnode} =~ /{node([A-Z]+)\d+}/g;
     my $z = 0; my @newtypes;
@@ -1105,6 +1230,8 @@ sub point_mutate {
 	last;
       }
     }
+    # Changed the structure, so size may need recalculating
+    $self->{sizeCalcRequired} = 1;
   } else { # it's a terminal node
     # is it a number? (doesn't catch ".123")
     # and are we allowed to mutate them by multiplication?
@@ -1141,7 +1268,7 @@ sub replace_subtree {
   my $mutnode =
     $self->_random_node(depth_bias=>$self->{MacroMutationDepthBias});
   return unless ($mutnode);
-  my ($ntype) = $mutnode =~ /node([A-Z]+)\d+/;
+  my ($ntype) = $mutnode =~ $regexp_nodeAZdnp;
 
   # replace subtree with random subtree tree
   $self->_del_subtree($mutnode);
@@ -1151,6 +1278,7 @@ sub replace_subtree {
   $genome->{$mutnode} =
     $self->_grow_tree(depth=>0, TreeDepthMax=>$newdepth, type=>$ntype);
   $self->{mutednodes}{$mutnode} = 'replace_subtree';
+  $self->{sizeCalcRequired} = 1;
 }
 
 sub insert_internal {
@@ -1159,7 +1287,7 @@ sub insert_internal {
   my $mutnode =
     $self->_random_node(depth_bias=>$self->{MacroMutationDepthBias});
   return unless ($mutnode);
-  my ($ntype) = $mutnode =~ /node([A-Z]+)\d+/;
+  my ($ntype) = $mutnode =~ $regexp_nodeAZdnp;
 
   my $nodeid = $self->nid();
   $nodeid = $self->nid() while (defined $genome->{"node$ntype$nodeid"});
@@ -1199,6 +1327,7 @@ sub insert_internal {
       }
     }
   }
+  $self->{sizeCalcRequired} = 1;
 }
 
 sub delete_internal {
@@ -1207,7 +1336,7 @@ sub delete_internal {
   my $mutnode =
     $self->_random_node(depth_bias=>$self->{MacroMutationDepthBias});
   return unless ($mutnode);
-  my ($ntype) = $mutnode =~ /node([A-Z]+)\d+/;
+  my ($ntype) = $mutnode =~ $regexp_nodeAZdnp;
 
   my $secondnode =
     $self->_random_node(depth_bias=>$self->{MacroMutationDepthBias},
@@ -1224,6 +1353,7 @@ sub delete_internal {
     $self->{mutednodes}{$mutnode} = 'delete_internal';
     $self->{mutednodes}{$secondnode} = 'delete_internal';
   }
+  $self->{sizeCalcRequired} = 1;
 }
 
 sub copy_subtree {
@@ -1232,7 +1362,7 @@ sub copy_subtree {
   my $mutnode =
     $self->_random_node(depth_bias=>$self->{MacroMutationDepthBias});
   return unless ($mutnode);
-  my ($ntype) = $mutnode =~ /node([A-Z]+)\d+/;
+  my ($ntype) = $mutnode =~ $regexp_nodeAZdnp;
 
   # get another node that isn't in the subtree of mutnode
   my $secondnode =
@@ -1253,6 +1383,7 @@ sub copy_subtree {
       $self->{mutednodes}{$secondnode} = 'copy_subtree';
     }
   }
+  $self->{sizeCalcRequired} = 1;
 }
 
 sub swap_subtrees {
@@ -1261,7 +1392,7 @@ sub swap_subtrees {
   my $mutnode =
     $self->_random_node(depth_bias=>$self->{MacroMutationDepthBias});
   return unless ($mutnode);
-  my ($ntype) = $mutnode =~ /node([A-Z]+)\d+/;
+  my ($ntype) = $mutnode =~ $regexp_nodeAZdnp;
 
   # get another node that isn't in the subtree of mutnode
   my $secondnode =
@@ -1283,6 +1414,7 @@ sub swap_subtrees {
       $self->{mutednodes}{$secondnode} = 'swap_subtrees';
     }
   }
+  $self->{sizeCalcRequired} = 1;
 }
 
 sub encapsulate_subtree {
@@ -1295,7 +1427,7 @@ sub encapsulate_subtree {
     my $mutnode =
       $self->_random_node(depth_bias=>$self->{MacroMutationDepthBias});
     return unless ($mutnode);
-    my ($ntype) = $mutnode =~ /node([A-Z]+)\d+/;
+    my ($ntype) = $mutnode =~ $regexp_nodeAZdnp;
 
     # some individuals don't allow certain subtrees to be frozen
     next if ($self->{EncapsulateIgnoreNTypes}{$ntype});
@@ -1316,6 +1448,7 @@ sub encapsulate_subtree {
       last; # we're done!
     }
   }
+  $self->{sizeCalcRequired} = 1;
 }
 
 sub simplify {
@@ -1334,17 +1467,51 @@ sub _xcopy_subtree {
     $genome->{$subnode.'x'} = $genome->{$subnode};
     $self->_xcopy_subtree($subnode.'x');
   }
+  $self->{sizeCalcRequired} = 1;
+}
+
+sub _get_subnodes_lookup {
+  my ($self, $node) = @_;
+
+  my @subnodes = @{$self->{nodesLookup}{$node}{subnodes}};
+  my @retnodes = ();
+  foreach my $subnode (@subnodes) {
+      push @retnodes, $self->_get_subnodes_lookup($subnode);
+  }
+  return (@subnodes, @retnodes);
+}
+
+# assume tied
+sub _get_subnodes_search {
+  my ($self, $node) = @_;
+
+  $self->{sizeCalcRequired} = 1 if (! exists $self->{sizeCalcRequired});
+  $self->{nodesLookup} = {} if (! exists $self->{nodesLookup});
+
+  my @subnodes = $self->{genome}{$node} =~ /{(node[A-Z]+\d+)}/g;
+  my @retnodes = ();
+  foreach my $subnode (@subnodes) {
+      push @retnodes, $self->_get_subnodes_search($subnode);
+  }
+  return (@subnodes, @retnodes);
 }
 
 # assume tied
 sub _get_subnodes {
-    my ($self, $node) = @_;
-    my @subnodes = $self->{genome}{$node} =~ /{(node[A-Z]+\d+)}/g;
-    my @retnodes = ();
-    foreach my $subnode (@subnodes) {
-        push @retnodes, $self->_get_subnodes($subnode);
-    }
-    return (@subnodes, @retnodes);
+  my ($self, $node) = @_;
+
+  $self->{sizeCalcRequired} = 1 if (! exists $self->{sizeCalcRequired});
+  $self->{nodesLookup} = {} if (! exists $self->{nodesLookup});
+
+  my @subnodes;
+  my @retnodes;
+  if (($self->{sizeCalcRequired} == 1) || ! (exists $self->{nodesLookup}{$node})) {
+    (@subnodes, @retnodes) = $self->_get_subnodes_search($node);
+  }
+  else {
+    (@subnodes, @retnodes) = $self->_get_subnodes_lookup($node);
+  }
+  return (@subnodes, @retnodes);
 }
 
 
@@ -1361,38 +1528,55 @@ sub _del_subtree {
     $self->_del_subtree($subnode);
     delete $genome->{$subnode};
   }
+  $self->{sizeCalcRequired} = 1;
 }
 
 # assume tied
 sub _tree_type_size { 
-  my ($self, $node, $sizes, $types, $ignore) = @_;
-  my $genome = $self->{genome};
+  my ($self, $node, $sizes, $types, $ignore, $stack) = @_;
 
-  my $nodetype = $node;
-  $nodetype =~ s/node|\d+//g;
+  $self->{sizeCalcRequired} = 1 if (! exists $self->{sizeCalcRequired});
+  $self->{nodesLookup} = {} if (! exists $self->{nodesLookup});
 
-  $self->_tree_error($node, '_tree_type_size')
-    if (!defined $genome->{$node});
+  my $nodetype;
+  my $sum;
+  if (($self->{sizeCalcRequired} == 1) || ! (exists $self->{nodesLookup}{$node})) {
+    my @subnodes;
+    my $genome = $self->{genome};
 
-  my @subnodes = $genome->{$node} =~ /{(node[A-Z]+\d+)}/g;
-  if (@subnodes == 0) { # this is a leaf
-    $sizes->{$node} = 1 if (defined $sizes);
-    $types->{$node} = $nodetype if (defined $types);
-    # is this an encapsulated subtree?  if so return the size of
-    # the original - else 1
-    return $genome->{$node}  =~ /^;;(\d+);;/ && $1 || 1;
-  }
-  # otherwise sum up the sizes of the subtrees
-  # however if the $ignore hashref is defined then
-  # don't recurse into subtree if the nodetype is in that hash
-  my $sum = 1;
-  unless (defined $ignore && $ignore->{$nodetype}) {
-    foreach my $subnode (@subnodes) {
-      $sum += $self->_tree_type_size($subnode, $sizes, $types, $ignore);
+    $self->_tree_error($node, '_tree_type_size')
+      if (!defined $genome->{$node});
+
+    $nodetype = $node;
+    $nodetype =~ s/node|\d+//g;
+    @subnodes = $genome->{$node} =~ /{(node[A-Z]+\d+)}/g;
+    if (@subnodes == 0) { # this is a leaf
+      $sizes->{$node} = 1 if (defined $sizes);
+      $types->{$node} = $nodetype if (defined $types);
+      $self->{nodesLookup}{$node} = { sum=>1, nodetype=>$nodetype, subnodes=>[] };
+      # is this an encapsulated subtree?  if so return the size of
+      # the original - else 1
+      return $genome->{$node}  =~ /^;;(\d+);;/ && $1 || 1;
     }
+    # otherwise sum up the sizes of the subtrees
+    # however if the $ignore hashref is defined then
+    # don't recurse into subtree if the nodetype is in that hash
+    $sum = 1;
+    unless (defined $ignore && $ignore->{$nodetype}) {
+      foreach my $subnode (@subnodes) {
+        $sum += $self->_tree_type_size($subnode, $sizes, $types, $ignore);
+      }
+    }
+    $self->{nodesLookup}{$node} = { sum=>$sum, nodetype=> $nodetype, subnodes=> [@subnodes] };
+  }
+  else
+  {
+    $sum = $self->{nodesLookup}{$node}{sum};
+    $nodetype = $self->{nodesLookup}{$node}{nodetype};
   }
   $sizes->{$node} = $sum if (defined $sizes);
   $types->{$node} = $nodetype if (defined $types);
+  $self->{sizeCalcRequired} = 0 if ($node eq 'root');
   return $sum;
 }
 
