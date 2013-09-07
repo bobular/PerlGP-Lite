@@ -6,7 +6,7 @@ use strict;
 use warnings; # FATAL => 'all';
 use Mouse;
 use SDBM_File;
-use DB_File;
+# use DB_File;
 use PerlGP::Lite::GPMisc qw/pickrandom poisson/;
 use Fcntl;
 use Digest::MD5 qw(md5_hex);
@@ -188,11 +188,8 @@ __PACKAGE__->meta->make_immutable();
 
 
 # my $DBTYPE = 'SDBM_File';
-my $DBTYPE = 'DB_File';
+my $DBTYPE = 'SDBM_File';
 my $too_many_tries = 5000;
-
-my $regexp_nodeAZd = qr/{node[A-Z]+\d+}/;
-my $regexp_nodeAZdnp = qr/node([A-Z]+)\d+/;
 
 sub _init {
   my ($self) = @_;
@@ -898,7 +895,7 @@ sub _has_children {
 
   my $children;
   if (($self->{sizeCalcRequired} == 1) || ! (exists $self->{nodesLookup}{$node})) {
-    $children = $self->{genome}{$node} =~ $regexp_nodeAZd;
+    $children = $self->{genome}{$node} =~ qr/{node[A-Z]+\d+}/;
   }
   else {
     $children = @{$self->{nodesLookup}{$node}{subnodes}};
@@ -914,7 +911,7 @@ sub _children {
 
   my $children;
   if (($self->{sizeCalcRequired} == 1) || ! (exists $self->{nodesLookup}{$node})) {
-    $children = $self->{genome}{$node} =~ $regexp_nodeAZd;
+    $children = $self->{genome}{$node} =~ qr/{node[A-Z]+\d+}/;
   }
   else {
     $children = $self->{nodesLookup}{$node}{subnodes};
@@ -994,7 +991,7 @@ sub _tree_id_lookup {
 # assume tied
 sub _tree_id_search {
   my ($self, $mate, $mynode, $matenode) = @_;
-  if ($self->{genome}{$mynode} =~ $regexp_nodeAZd) {
+  if ($self->{genome}{$mynode} =~ qr/{node[A-Z]+\d+}/) {
     if ($mate->_has_children($matenode)) {
       my $mycopy = $self->{genome}{$mynode};
       my $matecopy = $mate->{genome}{$matenode};
@@ -1213,10 +1210,10 @@ sub point_mutate {
     $self->_random_node(depth_bias=>$depth_bias);
   return unless ($mutnode);
 
-  my ($ntype) = $mutnode =~ $regexp_nodeAZdnp;
+  my ($ntype) = $mutnode =~ qr/node([A-Z]+)\d+/;
 
   # if it's an internal node
-  if ($genome->{$mutnode} =~ $regexp_nodeAZd) {
+  if ($genome->{$mutnode} =~ qr/{node[A-Z]+\d+}/) {
     my @subnodes = $genome->{$mutnode} =~ /{(node[A-Z]+\d+)}/g;
     my @subtypes = $genome->{$mutnode} =~ /{node([A-Z]+)\d+}/g;
     my $z = 0; my @newtypes;
@@ -1268,7 +1265,7 @@ sub replace_subtree {
   my $mutnode =
     $self->_random_node(depth_bias=>$self->{MacroMutationDepthBias});
   return unless ($mutnode);
-  my ($ntype) = $mutnode =~ $regexp_nodeAZdnp;
+  my ($ntype) = $mutnode =~ qr/node([A-Z]+)\d+/;
 
   # replace subtree with random subtree tree
   $self->_del_subtree($mutnode);
@@ -1287,7 +1284,7 @@ sub insert_internal {
   my $mutnode =
     $self->_random_node(depth_bias=>$self->{MacroMutationDepthBias});
   return unless ($mutnode);
-  my ($ntype) = $mutnode =~ $regexp_nodeAZdnp;
+  my ($ntype) = $mutnode =~ qr/node([A-Z]+)\d+/;
 
   my $nodeid = $self->nid();
   $nodeid = $self->nid() while (defined $genome->{"node$ntype$nodeid"});
@@ -1336,7 +1333,7 @@ sub delete_internal {
   my $mutnode =
     $self->_random_node(depth_bias=>$self->{MacroMutationDepthBias});
   return unless ($mutnode);
-  my ($ntype) = $mutnode =~ $regexp_nodeAZdnp;
+  my ($ntype) = $mutnode =~ qr/node([A-Z]+)\d+/;
 
   my $secondnode =
     $self->_random_node(depth_bias=>$self->{MacroMutationDepthBias},
@@ -1362,7 +1359,7 @@ sub copy_subtree {
   my $mutnode =
     $self->_random_node(depth_bias=>$self->{MacroMutationDepthBias});
   return unless ($mutnode);
-  my ($ntype) = $mutnode =~ $regexp_nodeAZdnp;
+  my ($ntype) = $mutnode =~ qr/node([A-Z]+)\d+/;
 
   # get another node that isn't in the subtree of mutnode
   my $secondnode =
@@ -1392,7 +1389,7 @@ sub swap_subtrees {
   my $mutnode =
     $self->_random_node(depth_bias=>$self->{MacroMutationDepthBias});
   return unless ($mutnode);
-  my ($ntype) = $mutnode =~ $regexp_nodeAZdnp;
+  my ($ntype) = $mutnode =~ qr/node([A-Z]+)\d+/;
 
   # get another node that isn't in the subtree of mutnode
   my $secondnode =
@@ -1427,7 +1424,7 @@ sub encapsulate_subtree {
     my $mutnode =
       $self->_random_node(depth_bias=>$self->{MacroMutationDepthBias});
     return unless ($mutnode);
-    my ($ntype) = $mutnode =~ $regexp_nodeAZdnp;
+    my ($ntype) = $mutnode =~ qr/node([A-Z]+)\d+/;
 
     # some individuals don't allow certain subtrees to be frozen
     next if ($self->{EncapsulateIgnoreNTypes}{$ntype});
