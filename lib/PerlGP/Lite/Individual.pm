@@ -89,6 +89,19 @@ has 'Terminals' => (
 
 =cut
 
+=head2 quick_crossover_probability
+
+QuickXoverProb
+
+=cut
+
+has 'QuickXoverProb' =>
+  ( init_arg => 'quick_crossover_probability',
+    is => 'rw',
+    isa => 'Num',
+    default => 0.9,
+  );
+
 =head2 crossover_probability
 
 NodeXoverProb
@@ -276,7 +289,7 @@ sub _init {
 		  XoverHomologyBias => 1,
  # Quick Homologous Crossover (new in version 1.1)
  # 0 = off, 1 = always on
-                  QuickXoverProb => 0.9,
+                #  QuickXoverProb => 0.9,
 
 
  # Depth bias for crossover point selection (see MacroMutationDepthBias)
@@ -735,7 +748,7 @@ sub crossover {
   $mate->_tree_type_size('root', \%matesizes, \%matetypes);
   @matenodes = sort { $matesizes{$b} <=> $matesizes{$a} } @matenodes;
 
-  my ($samples, $maxsamples, $xovercount) = (0, $numtodo*10, 0);
+  my ($samples, $maxsamples, $xovercount) = (0, $numtodo*100, 0);
 
   my (%myxsubnodes, %matexsubnodes); # these are the children of xover nodes
   my (%myxpair, %matexpair); # these are the xover nodes themselves (value=partners)
