@@ -175,9 +175,24 @@ has 'MinTreeNodes' =>
     default => 0,
   );
 
+=head2 numeric_mutation_probability
+
+NumericMutationFrac
+
+=cut
+
+has 'NumericMutationFrac' =>
+  ( init_arg => 'numeric_mutation_probability',
+    is => 'rw',
+    isa => 'Num',
+    default => 0,
+  );
+
 =head2 numeric_mutation_types
 
 NumericAllowNTypes
+
+e.g. { CONST => 1.0 }
 
 =cut
 
@@ -227,7 +242,7 @@ sub _init {
 
  # Fraction of point mutations which involve constants that are randomly
  # adjusted rather than discretely
-		  NumericMutationFrac => 0.0,
+		  # NumericMutationFrac => 0.0,
  # Which types are allowed or ignored when doing numeric mutation
  # (for example you might not want some integers becoming floating point)
  # specify the following like this: { VARX=>1, CONSTY=>1 }
@@ -235,7 +250,7 @@ sub _init {
  # and/or the following like this: { VARX=>0.5, CONSTY=>0.2 }
  # where the value is the maximum change amount (*= or /= 1.5 and 1.2)
  # default is 0.1 (num = num*1.1 or num = num/1.1)
-		  NumericAllowNTypes => {},
+		  # NumericAllowNTypes => {},
  # the regular expression that defines what a number for numeric mutation is
  # for example you could set this to integers only: qr/^\d+$/ so that you
  # get 'one shot' numeric mutation
