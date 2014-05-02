@@ -734,7 +734,7 @@ sub _expand_tree {
 }
 
 sub crossover {
-  my ($self, $mate, $recip1, $recip2) = @_;
+  my ($self, $mate, $recip1, $recip2, $opts) = @_;
   $self->reInitialise(); # if implemented, redefined xover params
   my $mygenome = $self->tieGenome('crossme');
   my $mategenome = $mate->tieGenome('crossmate');
@@ -783,7 +783,20 @@ sub crossover {
   while ($xovercount < $numtodo) {
     # select one of my nodes - with optional bias towards root (XoverDepthBias > 1) or leaves (XoverDepthBias < 1)
     my $mynode = $mynodes[int(@mynodes * rand(1)**$self->{XoverDepthBias})];
-
+    my $preapproved = 0;
+    # handle the option for ensuring certain node types
+    # opts->{prefer_types} is an arrayref of node types that
+    # are tried once only
+    if ($opts && $opts->{prefer_types} && @{$opts->{prefer_types}}) {
+      # pick an prefer_type at random
+      my $prefer_type = splice(@{$opts->{prefer_types}}, int(rand(@{$opts->{prefer_types}})), 1);
+      my @tmpnodes = grep { $mytypes{$_} eq $prefer_type } @mynodes;
+      if (@tmpnodes) {
+	$mynode = $tmpnodes[int(rand(@tmpnodes))];
+	$preapproved = 1;
+	# warn "preferred and preapproved $mynode\n";
+      }
+    } 
 
     # select one of the mate's nodes
     my $matenode;
@@ -827,13 +840,14 @@ sub crossover {
 
       my $id;
       # if we accept the two subtrees as similar size:
-      if (rand() > (abs($mysizes{$mynode} - $matesizes{$matenode})/$bigger)
+      if ($preapproved ||
+	  rand() > (abs($mysizes{$mynode} - $matesizes{$matenode})/$bigger)
 	            ** (1/$self->{XoverSizeBias}) &&
 	  # and content (crude homology):
 	  rand() < ((($id = $self->_tree_id($mate, $mynode, $matenode)) + 0.1)
 		    /$smaller)**$self->{XoverHomologyBias}) {
 
-	my $pcid = int(100*$id/$smaller);
+	my $pcid = $preapproved ? -1 : int(100*$id/$smaller);
 
 	# check to see if these nodes have other xover points in their subtrees
 	my @myxsubnodes = $self->_get_subnodes($mynode);
@@ -893,7 +907,7 @@ sub crossover {
 	close(FILE);
       }
     }
-
+warn "chosen ".join(" ", sort keys %myxpair)."\n";
     # do the crossovers
     $self->_start_crossover($mate, $recip1, \%myxpair);
     $mate->_start_crossover($self, $recip2, \%matexpair);
@@ -1070,7 +1084,7 @@ sub _crossover {
   my ($self, $mate, $recip,
       $selfnode, $matenode, $myxpoint) = @_;
   my $newnode;
-
+#warn "crossing $selfnode x $matenode\n";
   if ($selfnode) {
     $newnode = ($recip->{genome}{$selfnode} = $self->{genome}{$selfnode});
   } else {
